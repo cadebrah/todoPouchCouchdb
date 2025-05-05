@@ -24,7 +24,6 @@ export default function ExploreScreen() {
   const backgroundColor = useThemeColor({ light: '#f5f5f5', dark: '#000000' }, 'background');
   const cardBackgroundColor = useThemeColor({ light: '#ffffff', dark: '#1c1c1e' }, 'background');
   const buttonColor = useThemeColor({ light: '#2196f3', dark: '#4dabf5' }, 'tint');
-  const textColor = useThemeColor({ light: '#000000', dark: '#ffffff' }, 'text');
   const secondaryTextColor = useThemeColor({ light: '#757575', dark: '#a0a0a0' }, 'text');
   const errorColor = useThemeColor({ light: '#f44336', dark: '#f44336' }, 'text');
 

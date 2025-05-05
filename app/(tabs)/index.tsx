@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, FAB, Menu, Snackbar } from 'react-native-paper';
 
@@ -26,7 +26,8 @@ export default function TodoListScreen() {
   const backgroundColor = useThemeColor({ light: '#f5f5f5', dark: '#000000' }, 'background');
   const fabColor = useThemeColor({ light: '#2196f3', dark: '#4dabf5' }, 'tint');
 
-  const loadTodos = async () => {
+  // This function is now primarily used for filtering
+  const loadTodos = useCallback(async () => {
     try {
       setLoading(true);
       let todoList: Todo[];
@@ -47,34 +48,55 @@ export default function TodoListScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterCompleted]);
 
-  // Load todos when screen is focused
+  // Set up subscription to todos changes when screen is focused
   useFocusEffect(
     useCallback(() => {
+      let subscription: any = null;
+      
       if (isInitialized) {
+        // Set loading to true initially
+        setLoading(true);
+        
+        // Load initial todos
         loadTodos();
+        
+        // Subscribe to PouchDB changes
+        if (filterCompleted === null) {
+          const changes = localDB.changes({
+            since: 'now',
+            live: true,
+            include_docs: true,
+          }).on('change', () => {
+            loadTodos();
+          });
+          
+          subscription = changes;
+        }
       }
 
-      // Listen for changes in the local database
-      const changes = localDB.changes({
-        since: 'now',
-        live: true,
-        include_docs: true,
-      }).on('change', () => {
-        loadTodos();
-      });
-
+      // Clean up subscription when screen loses focus
       return () => {
-        changes.cancel();
+        if (subscription) {
+          subscription.unsubscribe();
+        }
       };
-    }, [isInitialized, loadTodos])
+    }, [isInitialized, filterCompleted, loadTodos])
   );
+
+  // Also subscribe to filter changes
+  useEffect(() => {
+    if (isInitialized && filterCompleted !== null) {
+      loadTodos();
+    }
+  }, [filterCompleted, isInitialized, loadTodos]);
 
   // Toggle todo completion status
   const toggleComplete = async (id: string) => {
     try {
       await TodoRepository.toggleComplete(id);
+      // No need to manually reload - the subscription will update the UI
     } catch (error) {
       console.error('Error toggling todo completion:', error);
       setSnackbarMessage('Error updating todo');
@@ -86,6 +108,7 @@ export default function TodoListScreen() {
   const deleteTodo = async (id: string) => {
     try {
       await TodoRepository.delete(id);
+      // No need to manually reload - the subscription will update the UI
     } catch (error) {
       console.error('Error deleting todo:', error);
       setSnackbarMessage('Error deleting todo');
@@ -113,7 +136,7 @@ export default function TodoListScreen() {
     }
   };
 
-  // Render filter indicator
+  // Rest of your component remains the same
   const renderFilterIndicator = () => {
     if (filterCompleted === null) return null;
     
@@ -261,6 +284,7 @@ const Divider = () => (
   <View style={{ height: 1, backgroundColor: 'rgba(0, 0, 0, 0.1)', margin: 4 }} />
 );
 
+// Your existing styles remain the same
 const styles = StyleSheet.create({
   container: {
     flex: 1,

@@ -1,138 +1,116 @@
-import PouchAdapterAsyncStorage from 'pouchdb-adapter-asyncstorage';
-import PouchAdapterHttp from 'pouchdb-adapter-http';
-import PouchDB from 'pouchdb-core';
-import PouchDBFind from 'pouchdb-find';
-import PouchDBMapReduce from 'pouchdb-mapreduce';
-import PouchDBReplication from 'pouchdb-replication';
-import 'react-native-get-random-values'; // Required for UUID generation
+import {
+  BasicAuthenticator,
+  CblReactNativeEngine,
+  Database,
+  DatabaseConfiguration,
+  FileSystem,
+  Replicator,
+  ReplicatorConfiguration,
+  ReplicatorType,
+  URLEndpoint
+} from 'cbl-reactnative';
+import { EventEmitter } from 'events';
 
-// Register PouchDB plugins
-PouchDB.plugin(PouchAdapterAsyncStorage);
-PouchDB.plugin(PouchAdapterHttp);
-PouchDB.plugin(PouchDBFind);
-PouchDB.plugin(PouchDBMapReduce);
-PouchDB.plugin(PouchDBReplication);
-
-// Create local database
-const localDB = new PouchDB('todos', { adapter: 'asyncstorage' });
-
-// Configuration for remote CouchDB
-const REMOTE_COUCHDB_URL = 'https://admin:password@todo-app-sync-8119f06155bc.herokuapp.com/todos';
-
-// Create remote database connection
-const remoteDB = new PouchDB(REMOTE_COUCHDB_URL);
-
-// Define sync status type
+// Define sync status types (same as your previous implementation)
 export type SyncStatus = 'pending' | 'active' | 'paused' | 'error' | 'complete' | 'denied';
 
-// Sync status listener interface
-export interface SyncStatusListener {
-  onStatusChange: (status: SyncStatus, info?: any) => void;
-}
+// Event emitter for database events
+const dbEvents = new EventEmitter();
 
-// Array to store sync status listeners
-const syncStatusListeners: SyncStatusListener[] = [];
+// Current sync status
+let currentSyncStatus: SyncStatus = 'pending';
+let currentSyncError: Error | null = null;
 
-// Add a sync status listener
-export const addSyncStatusListener = (listener: SyncStatusListener) => {
-  syncStatusListeners.push(listener);
-};
+// Remote CouchDB URL
+const REMOTE_COUCHDB_URL = 'https://admin:password@todo-app-sync-8119f06155bc.herokuapp.com/todos';
 
-// Remove a sync status listener
-export const removeSyncStatusListener = (listener: SyncStatusListener) => {
-  const index = syncStatusListeners.indexOf(listener);
-  if (index > -1) {
-    syncStatusListeners.splice(index, 1);
-  }
-};
+// Database variables
+let engine: CblReactNativeEngine | null = null;
+let database: Database | null = null;
+let replicator: Replicator | null = null;
 
-// Notify all listeners of a status change
-const notifySyncStatusChange = (status: SyncStatus, info?: any) => {
-  syncStatusListeners.forEach(listener => {
-    listener.onStatusChange(status, info);
-  });
-};
-
-// Setup sync options
-const syncOptions = {
-  live: true, // Keep the sync alive
-  retry: true, // Retry on failure
-  continuous: true, // Continuously sync
-};
-
-// Initialize sync
-let syncHandler: any = null;
-
-export const sync = () => {
-  // If sync is already running, cancel it first
-  if (syncHandler) {
-    syncHandler.cancel();
-  }
-
-  // Start sync
-  syncHandler = localDB.sync(remoteDB, syncOptions)
-    .on('change', (change: PouchDBChange) => {
-      console.log('Sync change:', change);
-      notifySyncStatusChange('active', change);
-    })
-    .on('paused', (info: PouchDBInfo) => {
-      console.log('Sync paused:', info);
-      notifySyncStatusChange('paused', info);
-    })
-    .on('active', () => {
-      console.log('Sync active');
-      notifySyncStatusChange('active');
-    })
-    .on('denied', (err: PouchDBError) => {
-      console.error('Sync denied:', err);
-      notifySyncStatusChange('denied', err);
-    })
-    .on('complete', (info: PouchDBInfo) => {
-      console.log('Sync complete:', info);
-      notifySyncStatusChange('complete', info);
-    })
-    .on('error', (err: PouchDBError) => {
-      console.error('Sync error:', err);
-      notifySyncStatusChange('error', err);
-    });
-
-  return syncHandler;
-};
-
-// Initialize database indexes
+// Initialize database
 export const initializeDB = async () => {
+  if (database) return true;
+  
   try {
-    // Create index for type field
-    await localDB.createIndex({
-      index: { fields: ['type'] }
-    });
+    // Initialize React Native Engine
+    engine = new CblReactNativeEngine();
     
-    // Create index for completed field
-    await localDB.createIndex({
-      index: { fields: ['completed'] }
-    });
+    // Get default file path for database
+    const fileSystem = new FileSystem();
+    const directoryPath = await fileSystem.getDefaultPath();
     
-    // Create index for createdAt field
-    await localDB.createIndex({
-      index: { fields: ['createdAt'] }
-    });
+    // Configure database
+    const config = new DatabaseConfiguration();
+    config.setDirectory(directoryPath);
     
-    console.log('Database indexes created successfully');
+    // Create or open database
+    database = new Database('todos', config);
+    await database.open();
+    
+    // Start sync
+    startSync();
+    
     return true;
   } catch (error) {
-    console.error('Error creating database indexes:', error);
+    console.error('Error initializing database:', error);
     return false;
   }
 };
 
-// Cancel sync
-export const cancelSync = () => {
-  if (syncHandler) {
-    syncHandler.cancel();
-    syncHandler = null;
+// Start replication
+export const startSync = () => {
+  if (!database) return null;
+  
+  try {
+    // Configure replication
+    const targetUrl = new URLEndpoint(REMOTE_COUCHDB_URL);
+    const authenticator = new BasicAuthenticator('admin', 'password');
+    
+    // Create replicator configuration
+    const config = new ReplicatorConfiguration();
+    config.setDatabase(database);
+    config.setTarget(targetUrl);
+    config.setReplicatorType(ReplicatorType.PUSH_AND_PULL);
+    config.setContinuous(true);
+    config.setAuthenticator(authenticator);
+    
+    // Create replicator
+    replicator = new Replicator(config);
+    
+    // Add listeners
+    replicator.addChangeListener((change) => {
+      const status = change.status;
+      
+      if (status.activity === 1) { // Active
+        updateSyncStatus('active');
+      } else if (status.activity === 0) { // Inactive
+        updateSyncStatus('paused');
+      } else if (status.activity === 2) { // Stopped
+        updateSyncStatus('complete');
+      } else if (status.activity === 3) { // Offline
+        updateSyncStatus('paused');
+      }
+      
+      if (status.error) {
+        updateSyncStatus('error', new Error(status.error.message));
+      }
+      
+      // Emit change event
+      dbEvents.emit('change');
+    });
+    
+    // Start replication
+    replicator.start();
+    
+    updateSyncStatus('active');
+    return replicator;
+  } catch (error) {
+    console.error('Error starting sync:', error);
+    updateSyncStatus('error', error instanceof Error ? error : new Error('Unknown error'));
+    return null;
   }
 };
 
-// Export database objects
-export { localDB, remoteDB };
-
+// Rest of the code remains the same...

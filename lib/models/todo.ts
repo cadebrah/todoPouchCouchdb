@@ -1,4 +1,4 @@
-import { localDB } from '../db';
+import { addDatabaseChangeListener, localDB } from '../db';
 
 // Todo interface
 export interface Todo {
@@ -202,5 +202,26 @@ export const TodoRepository = {
       console.error('Error deleting completed todos:', error);
       throw error;
     }
+  },
+
+   // Add new reactive methods
+   subscribeTodos(callback: (todos: Todo[]) => void) {
+    // Initial load
+    this.getAll().then(todos => callback(todos));
+    
+    // Return a function to unsubscribe
+    return addDatabaseChangeListener(() => {
+      this.getAll().then(todos => callback(todos));
+    });
+  },
+  
+  subscribeTodosByStatus(completed: boolean, callback: (todos: Todo[]) => void) {
+    // Initial load
+    this.getByStatus(completed).then(todos => callback(todos));
+    
+    // Return a function to unsubscribe
+    return addDatabaseChangeListener(() => {
+      this.getByStatus(completed).then(todos => callback(todos));
+    });
   }
 };

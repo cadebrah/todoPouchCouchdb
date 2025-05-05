@@ -1,73 +1,60 @@
 import { useEffect, useState } from 'react';
-import { addSyncStatusListener, cancelSync, initializeDB, removeSyncStatusListener, sync, SyncStatus, SyncStatusListener } from '../lib/db';
-
-const initializeDatabase = async (setIsInitialized: (value: boolean) => void, setIsInitializing: (value: boolean) => void, setSyncHandler: (handler: any) => void) => {
-  try {
-    setIsInitializing(true);
-    const initialized = await initializeDB();
-    setIsInitialized(initialized);
-    setIsInitializing(false);
-    
-    if (initialized) {
-      const handler = sync();
-      setSyncHandler(handler);
-    }
-  } catch (error) {
-    console.error('Error initializing database:', error);
-    setIsInitializing(false);
-    throw error;
-  }
-};
+import {
+  getSyncError,
+  getSyncStatus,
+  initializeDB,
+  restartSync,
+  SyncStatus
+} from '../lib/db';
 
 export function useDatabase() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('pending');
-  const [syncError, setSyncError] = useState<Error | null>(null);
-  const [syncHandler, setSyncHandler] = useState<any>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
+  const [syncError, setSyncError] = useState<Error | null>(getSyncError());
 
+  // Initialize the database
   useEffect(() => {
     let isMounted = true;
     
-    const handleStatusChange = (status: SyncStatus, info?: any) => {
-      if (!isMounted) return;
-      
-      setSyncStatus(status);
-      if (status === 'error' && info) {
-        setSyncError(info instanceof Error ? info : new Error(info.toString()));
-      } else {
-        setSyncError(null);
-      }
-    };
-    
-    const statusListener: SyncStatusListener = {
-      onStatusChange: handleStatusChange
-    };
-    
-    addSyncStatusListener(statusListener);
-    
-    initializeDatabase(setIsInitialized, setIsInitializing, setSyncHandler)
-      .catch(error => {
+    const initialize = async () => {
+      try {
+        setIsInitializing(true);
+        const initialized = await initializeDB();
+        
         if (isMounted) {
+          setIsInitialized(initialized);
+          setIsInitializing(false);
+        }
+      } catch (error) {
+        console.error('Error initializing database:', error);
+        if (isMounted) {
+          setIsInitializing(false);
           setSyncError(error instanceof Error ? error : new Error('Unknown error'));
         }
-      });
-    
-    return () => {
-      isMounted = false;
-      removeSyncStatusListener(statusListener);
-      if (syncHandler) {
-        cancelSync();
       }
     };
+    
+    initialize();
+    
+    // Listen for status changes
+    const onStatusChange = (status: SyncStatus, error?: Error | null) => {
+      if (isMounted) {
+        setSyncStatus(status);
+        setSyncError(error || null);
+      }
+    };
+    
+    // Set up event listeners
+    const dbEvents = require('../lib/db').dbEvents;
+    dbEvents.on('statusChange', onStatusChange);
+    
+    // Clean up
+    return () => {
+      isMounted = false;
+      dbEvents.removeListener('statusChange', onStatusChange);
+    };
   }, []);
-  
-  const restartSync = () => {
-    const handler = sync();
-    setSyncHandler(handler);
-    setSyncStatus('pending');
-    setSyncError(null);
-  };
   
   return {
     isInitialized,
