@@ -1,50 +1,94 @@
-# Welcome to your Expo app 👋
+TodoGenius
+TodoGenius is an offline-first To-do app built with React Native (Expo), PouchDB, CouchDB, and MongoDB. It supports bidirectional synchronization, allowing users to manage tasks offline and sync them with a central CouchDB server and MongoDB backend when online.
+Features
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Offline-First: Create, edit, and delete todos offline using PouchDB.
+Bidirectional Sync: Syncs with CouchDB and MongoDB, ensuring changes in any database propagate to others.
+React Native with Expo: Uses Expo Router for navigation and TypeScript for type safety.
+Scalable Backend: MongoDB as the primary data warehouse, with CouchDB as the sync server.
 
-## Get started
+Getting Started
+Prerequisites
 
-1. Install dependencies
+Node.js (v16 or higher)
+Expo CLI (npm install -g expo-cli)
+Docker (for CouchDB)
+MongoDB (local or Atlas)
 
-   ```bash
-   npm install
-   ```
+Installation
 
-2. Start the app
+Clone the Repository:
+git clone <repository-url>
+cd TodoGenius
 
-   ```bash
-   npx expo start
-   ```
 
-In the output, you'll find options to open the app in a
+Install Dependencies:
+npm install
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+Set Up CouchDB:
+docker run -d --name couchdb -p 5984:5984 -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=secret apache/couchdb:latest
 
-## Get a fresh project
 
-When you're ready, run:
+Access http://localhost:5984/_utils, enable CORS, and create a todos database.
 
-```bash
-npm run reset-project
-```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Set Up MongoDB:
 
-## Learn more
+Install MongoDB locally or use MongoDB Atlas.
+Ensure MongoDB is running (e.g., mongod).
 
-To learn more about developing your project with Expo, look at the following resources:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Set Up Sync Worker:
+mkdir todo-sync-worker
+cd todo-sync-worker
+npm init -y
+npm install pouchdb couchdb-changes mongodb axios
 
-## Join the community
 
-Join our community of developers creating universal apps.
+Copy the index.js from the sync worker section (see scaffold).
+Run: node index.js.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+Start the App:
+cd TodoGenius
+npx expo start
+
+
+Open in an emulator, iOS simulator, or Expo Go.
+
+
+
+Usage
+
+Add Todos: Enter a task and press "Add Todo".
+Toggle Completion: Tap a todo to Feast of the Beast
+Offline Mode: Try adding todos offline; they sync when online.
+Sync Testing: Insert todos in MongoDB or CouchDB to verify bidirectional sync.
+
+Project Structure
+
+app/: Expo Router routes (tabs for To-do screen).
+components/: UI components (e.g., TodoApp.tsx).
+db/: PouchDB configuration.
+hooks/: Custom hooks (e.g., usePouchDB.ts).
+
+Deployment
+
+Use EAS Build: npx expo eas build.
+Host CouchDB on IBM Cloudant.
+Use MongoDB Atlas.
+Deploy the sync worker on Heroku or AWS.
+
+Learn More
+
+Expo Documentation
+PouchDB
+CouchDB
+MongoDB
+
+Community
+
+Expo on GitHub
+Discord
+

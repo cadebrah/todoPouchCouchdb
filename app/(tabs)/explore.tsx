@@ -1,110 +1,374 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { FontAwesome } from '@expo/vector-icons';
+import React, { useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Button, Card, Divider, List, Switch } from 'react-native-paper';
 
-import { Collapsible } from '@/components/Collapsible';
-import { ExternalLink } from '@/components/ExternalLink';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { IconSymbol } from '@/components/ui/IconSymbol';
+import { Collapsible } from '../../components/Collapsible';
+import { ThemedText } from '../../components/ThemedText';
+import { ThemedView } from '../../components/ThemedView';
+import { useDatabase } from '../../hooks/useDatabase';
+import { useThemeColor } from '../../hooks/useThemeColor';
+import { localDB, remoteDB } from '../../lib/db';
+import { TodoRepository } from '../../lib/models/todo';
 
-export default function TabTwoScreen() {
+export default function ExploreScreen() {
+  const [syncStatus, setSyncStatus] = useState('Not connected');
+  const [serverInfo, setServerInfo] = useState<any>(null);
+  const [docsCount, setDocsCount] = useState<number>(0);
+  const [completedCount, setCompletedCount] = useState<number>(0);
+  const [checking, setChecking] = useState(false);
+  const [autoSync, setAutoSync] = useState(true);
+  
+  const { syncError, restartSync } = useDatabase();
+  
+  const backgroundColor = useThemeColor({ light: '#f5f5f5', dark: '#000000' }, 'background');
+  const cardBackgroundColor = useThemeColor({ light: '#ffffff', dark: '#1c1c1e' }, 'background');
+  const buttonColor = useThemeColor({ light: '#2196f3', dark: '#4dabf5' }, 'tint');
+  const textColor = useThemeColor({ light: '#000000', dark: '#ffffff' }, 'text');
+  const secondaryTextColor = useThemeColor({ light: '#757575', dark: '#a0a0a0' }, 'text');
+  const errorColor = useThemeColor({ light: '#f44336', dark: '#f44336' }, 'text');
+
+  // Check database info on mount
+  useEffect(() => {
+    updateDatabaseInfo();
+  }, []);
+
+  // Update database info
+  const updateDatabaseInfo = async () => {
+    try {
+      setChecking(true);
+      
+      // Get local database info
+      const localInfo = await localDB.info();
+      setDocsCount(localInfo.doc_count);
+      
+      // Check server connection
+      try {
+        const remoteInfo = await remoteDB.info();
+        setServerInfo(remoteInfo);
+        setSyncStatus('Connected');
+      } catch (error) {
+        console.error('Server connection error:', error);
+        setServerInfo(null);
+        setSyncStatus('Offline');
+      }
+      
+      // Get completed todos count
+      const completedTodos = await TodoRepository.getByStatus(true);
+      setCompletedCount(completedTodos.length);
+      
+    } catch (error) {
+      console.error('Error updating database info:', error);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  // Toggle auto sync
+  const toggleAutoSync = () => {
+    setAutoSync(!autoSync);
+    // In a real app, this would update the sync configuration
+  };
+
+  // Force sync
+  const forceSync = () => {
+    restartSync();
+    updateDatabaseInfo();
+  };
+
+  // Clear all todos
+  const clearAllTodos = async () => {
+    try {
+      setChecking(true);
+      
+      // Get all todos
+      const todos = await TodoRepository.getAll();
+      
+      // Delete each todo
+      for (const todo of todos) {
+        await TodoRepository.delete(todo._id);
+      }
+      
+      // Update counts
+      setDocsCount(0);
+      setCompletedCount(0);
+      
+    } catch (error) {
+      console.error('Error clearing todos:', error);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const getStatusColor = () => {
+    if (syncStatus === 'Connected') return '#4caf50';
+    if (syncStatus === 'Offline') return errorColor;
+    return secondaryTextColor;
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Explore</ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image source={require('@/assets/images/react-logo.png')} style={{ alignSelf: 'center' }} />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Custom fonts">
-        <ThemedText>
-          Open <ThemedText type="defaultSemiBold">app/_layout.tsx</ThemedText> to see how to load{' '}
-          <ThemedText style={{ fontFamily: 'SpaceMono' }}>
-            custom fonts such as this one.
-          </ThemedText>
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/versions/latest/sdk/font">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful <ThemedText type="defaultSemiBold">react-native-reanimated</ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+    <ThemedView style={[styles.container, { backgroundColor }]}>
+      <ScrollView>
+        <View style={styles.content}>
+          {/* Status Card */}
+          <Card style={[styles.card, { backgroundColor: cardBackgroundColor }]}>
+            <Card.Content>
+              <ThemedText style={styles.cardTitle}>Database Status</ThemedText>
+              
+              {checking ? (
+                <View style={styles.centerContainer}>
+                  <ActivityIndicator size="small" color={buttonColor} />
+                </View>
+              ) : (
+                <>
+                  <View style={styles.statusItem}>
+                    <ThemedText style={styles.statusLabel}>Local Documents:</ThemedText>
+                    <ThemedText style={styles.statusValue}>{docsCount}</ThemedText>
+                  </View>
+                  
+                  <View style={styles.statusItem}>
+                    <ThemedText style={styles.statusLabel}>Completed Tasks:</ThemedText>
+                    <ThemedText style={styles.statusValue}>{completedCount}</ThemedText>
+                  </View>
+                  
+                  <View style={styles.statusItem}>
+                    <ThemedText style={styles.statusLabel}>Server Status:</ThemedText>
+                    <ThemedText 
+                      style={[
+                        styles.statusValue, 
+                        { color: getStatusColor() }
+                      ]}
+                    >
+                      {syncStatus}
+                    </ThemedText>
+                  </View>
+                  
+                  {syncError && (
+                    <View style={styles.errorContainer}>
+                      <ThemedText style={[styles.errorText, { color: errorColor }]}>
+                        {syncError.message || 'Error connecting to server'}
+                      </ThemedText>
+                    </View>
+                  )}
+                </>
+              )}
+              
+              <View style={styles.buttonContainer}>
+                <Button
+                  mode="contained"
+                  onPress={updateDatabaseInfo}
+                  style={styles.button}
+                  disabled={checking}
+                >
+                  Refresh
+                </Button>
+                
+                <Button
+                  mode="outlined"
+                  onPress={forceSync}
+                  style={styles.button}
+                  disabled={checking}
+                >
+                  Force Sync
+                </Button>
+              </View>
+            </Card.Content>
+          </Card>
+          
+          {/* Settings Card */}
+          <Card style={[styles.card, { backgroundColor: cardBackgroundColor }]}>
+            <Card.Content>
+              <ThemedText style={styles.cardTitle}>Settings</ThemedText>
+              
+              <List.Item
+                title="Auto Sync"
+                description="Automatically sync when online"
+                left={props => <List.Icon {...props} icon="sync" />}
+                right={() => (
+                  <Switch
+                    value={autoSync}
+                    onValueChange={toggleAutoSync}
+                    color={buttonColor}
+                  />
+                )}
+              />
+              
+              <Divider style={styles.divider} />
+              
+              <List.Item
+                title="Server URL"
+                description={serverInfo?.db_name ? `${serverInfo.db_name} (v${serverInfo.version})` : 'Not connected'}
+                left={props => <List.Icon {...props} icon="server" />}
+              />
+              
+              <Divider style={styles.divider} />
+              
+              <Collapsible title="Advanced Options">
+                <View style={styles.dangerZone}>
+                  <ThemedText style={styles.dangerZoneTitle}>
+                    Danger Zone
+                  </ThemedText>
+                  
+                  <ThemedText style={styles.dangerZoneDescription}>
+                    These actions cannot be undone. Be careful!
+                  </ThemedText>
+                  
+                  <Button
+                    mode="outlined"
+                    onPress={clearAllTodos}
+                    style={styles.dangerButton}
+                    textColor={errorColor}
+                    icon="delete"
+                  >
+                    Delete All Todos
+                  </Button>
+                </View>
+              </Collapsible>
+            </Card.Content>
+          </Card>
+          
+          {/* About Card */}
+          <Card style={[styles.card, { backgroundColor: cardBackgroundColor }]}>
+            <Card.Content>
+              <ThemedText style={styles.cardTitle}>About</ThemedText>
+              
+              <ThemedText style={styles.aboutText}>
+                TodoGenius is an offline-first to-do application that uses PouchDB for local 
+                storage and syncs with a CouchDB server.
+              </ThemedText>
+              
+              <View style={styles.featureList}>
+                <View style={styles.featureItem}>
+                  <FontAwesome name="wifi" size={20} color={buttonColor} style={styles.featureIcon} />
+                  <ThemedText style={styles.featureText}>
+                    Works offline, syncs when online
+                  </ThemedText>
+                </View>
+                
+                <View style={styles.featureItem}>
+                  <FontAwesome name="database" size={20} color={buttonColor} style={styles.featureIcon} />
+                  <ThemedText style={styles.featureText}>
+                    Data persists across sessions
+                  </ThemedText>
+                </View>
+                
+                <View style={styles.featureItem}>
+                  <FontAwesome name="shield" size={20} color={buttonColor} style={styles.featureIcon} />
+                  <ThemedText style={styles.featureText}>
+                    Secure data storage
+                  </ThemedText>
+                </View>
+              </View>
+              
+              <ThemedText style={styles.versionText}>
+                Version 1.0.0
+              </ThemedText>
+            </Card.Content>
+          </Card>
+        </View>
+      </ScrollView>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: {
+    flex: 1,
   },
-  titleContainer: {
+  content: {
+    padding: 16,
+  },
+  card: {
+    marginBottom: 16,
+    borderRadius: 8,
+    elevation: 2,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  statusItem: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  statusLabel: {
+    fontSize: 14,
+  },
+  statusValue: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  button: {
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  divider: {
+    marginVertical: 8,
+  },
+  dangerZone: {
+    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  dangerZoneTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#f44336',
+    marginBottom: 8,
+  },
+  dangerZoneDescription: {
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  dangerButton: {
+    borderColor: '#f44336',
+  },
+  errorContainer: {
+    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+    padding: 8,
+    borderRadius: 4,
+    marginTop: 8,
+  },
+  errorText: {
+    fontSize: 12,
+  },
+  centerContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  aboutText: {
+    fontSize: 14,
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  featureList: {
+    marginBottom: 16,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  featureIcon: {
+    marginRight: 12,
+    width: 24,
+    textAlign: 'center',
+  },
+  featureText: {
+    fontSize: 14,
+  },
+  versionText: {
+    fontSize: 12,
+    textAlign: 'center',
+    opacity: 0.7,
   },
 });

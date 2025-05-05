@@ -1,75 +1,317 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import { FlatList, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Button, FAB, Menu, Snackbar } from 'react-native-paper';
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+import EmptyState from '../../components/EmptyState';
+import SyncIndicator from '../../components/SyncIndicator';
+import { ThemedText } from '../../components/ThemedText';
+import { ThemedView } from '../../components/ThemedView';
+import TodoItem from '../../components/TodoItem';
+import { useDatabase } from '../../hooks/useDatabase';
+import { useThemeColor } from '../../hooks/useThemeColor';
+import { localDB } from '../../lib/db';
+import { Todo, TodoRepository } from '../../lib/models/todo';
 
-export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
+export default function TodoListScreen() {
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [filterCompleted, setFilterCompleted] = useState<boolean | null>(null);
+  
+  const { isInitialized, syncStatus, syncError, restartSync } = useDatabase();
+  
+  const backgroundColor = useThemeColor({ light: '#f5f5f5', dark: '#000000' }, 'background');
+  const fabColor = useThemeColor({ light: '#2196f3', dark: '#4dabf5' }, 'tint');
+
+  const loadTodos = async () => {
+    try {
+      setLoading(true);
+      let todoList: Todo[];
+      
+      if (filterCompleted === null) {
+        // Get all todos
+        todoList = await TodoRepository.getAll();
+      } else {
+        // Get filtered todos
+        todoList = await TodoRepository.getByStatus(filterCompleted);
+      }
+      
+      setTodos(todoList);
+    } catch (error) {
+      console.error('Error loading todos:', error);
+      setSnackbarMessage('Error loading todos');
+      setSnackbarVisible(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load todos when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      if (isInitialized) {
+        loadTodos();
+      }
+
+      // Listen for changes in the local database
+      const changes = localDB.changes({
+        since: 'now',
+        live: true,
+        include_docs: true,
+      }).on('change', () => {
+        loadTodos();
+      });
+
+      return () => {
+        changes.cancel();
+      };
+    }, [isInitialized, loadTodos])
+  );
+
+  // Toggle todo completion status
+  const toggleComplete = async (id: string) => {
+    try {
+      await TodoRepository.toggleComplete(id);
+    } catch (error) {
+      console.error('Error toggling todo completion:', error);
+      setSnackbarMessage('Error updating todo');
+      setSnackbarVisible(true);
+    }
+  };
+
+  // Delete a todo
+  const deleteTodo = async (id: string) => {
+    try {
+      await TodoRepository.delete(id);
+    } catch (error) {
+      console.error('Error deleting todo:', error);
+      setSnackbarMessage('Error deleting todo');
+      setSnackbarVisible(true);
+    }
+  };
+
+  // Handle filter change
+  const handleFilterChange = (completed: boolean | null) => {
+    setFilterCompleted(completed);
+    setMenuVisible(false);
+  };
+
+  // Delete all completed todos
+  const deleteCompleted = async () => {
+    try {
+      const count = await TodoRepository.deleteCompleted();
+      setMenuVisible(false);
+      setSnackbarMessage(`Deleted ${count} completed ${count === 1 ? 'todo' : 'todos'}`);
+      setSnackbarVisible(true);
+    } catch (error) {
+      console.error('Error deleting completed todos:', error);
+      setSnackbarMessage('Error deleting completed todos');
+      setSnackbarVisible(true);
+    }
+  };
+
+  // Render filter indicator
+  const renderFilterIndicator = () => {
+    if (filterCompleted === null) return null;
+    
+    return (
+      <View style={styles.filterIndicator}>
+        <ThemedText style={styles.filterText}>
+          {filterCompleted ? 'Showing completed' : 'Showing active'}
+        </ThemedText>
+        <Button
+          mode="text"
+          onPress={() => handleFilterChange(null)}
+          compact
+        >
+          Clear
+        </Button>
+      </View>
+    );
+  };
+
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={fabColor} />
+        </View>
+      );
+    }
+    if (todos.length === 0) {
+      if (filterCompleted === true) {
+        return (
+          <EmptyState
+            title="No completed tasks"
+            description="Your completed tasks will appear here."
+            icon="check-circle"
+          />
+        );
+      } else if (filterCompleted === false) {
+        return (
+          <EmptyState
+            title="All tasks completed!"
+            description="Add a new task to get started."
+            buttonLabel="Add Task"
+            onButtonPress={() => router.push('/todo/new')}
+          />
+        );
+      }
+      return (
+        <EmptyState
+          title="No todos yet"
+          description="Add your first todo to get started"
+          buttonLabel="Add Todo"
+          onButtonPress={() => router.push('/todo/new')}
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      );
+    }
+    return (
+      <FlatList
+        data={todos}
+        renderItem={({ item }) => (
+          <TodoItem
+            todo={item}
+            onToggleComplete={toggleComplete}
+            onDelete={deleteTodo}
+          />
+        )}
+        keyExtractor={(item) => item._id}
+        contentContainerStyle={styles.list}
+      />
+    );
+  };
+
+  return (
+    <ThemedView style={[styles.container, { backgroundColor }]}>
+      {renderFilterIndicator()}
+      {renderContent()}
+      
+      <View style={styles.fabContainer}>
+        <Menu
+          visible={menuVisible}
+          onDismiss={() => setMenuVisible(false)}
+          anchor={
+            <Button
+              mode="contained"
+              icon="filter"
+              onPress={() => setMenuVisible(true)}
+              style={styles.filterButton}
+            >
+              Filter
+            </Button>
+          }
+        >
+          <Menu.Item
+            title="All Tasks"
+            onPress={() => handleFilterChange(null)}
+            leadingIcon="list-ul"
+          />
+          <Menu.Item
+            title="Active Tasks"
+            onPress={() => handleFilterChange(false)}
+            leadingIcon="circle"
+          />
+          <Menu.Item
+            title="Completed Tasks"
+            onPress={() => handleFilterChange(true)}
+            leadingIcon="check-circle"
+          />
+          <Divider />
+          <Menu.Item
+            title="Clear Completed"
+            onPress={deleteCompleted}
+            leadingIcon="trash"
+            disabled={!todos.some(todo => todo.completed)}
+          />
+        </Menu>
+        
+        <FAB
+          icon="plus"
+          style={[styles.fab, { backgroundColor: fabColor }]}
+          onPress={() => router.push('/todo/new')}
+        />
+      </View>
+      
+      {syncStatus && (
+        <View style={styles.syncContainer}>
+          <SyncIndicator status={syncStatus} onRestart={restartSync} />
+          <ThemedText style={styles.syncText}>
+            {syncError ? 'Sync Error' : syncStatus === 'active' ? 'Syncing...' : 'Offline'}
+          </ThemedText>
+        </View>
+      )}
+      
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={2000}
+      >
+        {snackbarMessage}
+      </Snackbar>
+    </ThemedView>
   );
 }
 
+// Helper component for Menu
+const Divider = () => (
+  <View style={{ height: 1, backgroundColor: 'rgba(0, 0, 0, 0.1)', margin: 4 }} />
+);
+
 const styles = StyleSheet.create({
-  titleContainer: {
+  container: {
+    flex: 1,
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  list: {
+    padding: 16,
+    paddingBottom: 100, // Extra space for FAB
+  },
+  fabContainer: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  filterButton: {
+    marginRight: 8,
+    borderRadius: 28,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
+  fab: {
+    borderRadius: 28,
+  },
+  syncContainer: {
     position: 'absolute',
+    left: 16,
+    bottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 16,
+  },
+  syncText: {
+    fontSize: 12,
+    marginLeft: 8,
+  },
+  filterIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  filterText: {
+    fontSize: 14,
   },
 });
